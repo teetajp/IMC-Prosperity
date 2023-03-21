@@ -1,5 +1,5 @@
 from typing import Dict, List
-from algo.datamodel import OrderDepth, TradingState, Order
+from datamodel import OrderDepth, TradingState, Order
 
 
 class Trader:
