@@ -1,11 +1,33 @@
 from typing import Dict, List
-from datamodel import OrderDepth, TradingState, Order
+from datamodel import OrderDepth, TradingState, Order, Symbol, Trade
 
 
 class Trader:
-
+    symbols = ["PEARLS", "BANANAS"]
     initial_fair_price = {"PEARLS": 10000, "BANANAS": 4875}
     position_limits = {"PEARLS": 20, "BANANAS": 20}
+    window_size = 10  # Set the number of prices to consider for the weighted moving average
+
+    def __init__(self):
+        self.trade_history = {"PEARLS": [], "BANANAS": []}
+
+    def update_trade_history(self, own_trades: Dict[Symbol, List[Trade]], market_trades: Dict[Symbol, List[Trade]]) \
+            -> None:
+        for symbol in Trader.symbols:
+            recent_trades = []
+            if symbol in own_trades:
+                recent_trades.extend(own_trades[symbol])
+            if symbol in market_trades:
+                recent_trades.extend(market_trades[symbol])
+
+            recent_trades.sort(key=lambda trade: trade.timestamp)
+
+            for trade in recent_trades:
+                self.trade_history[symbol].append(trade.price)
+
+            while len(self.trade_history[symbol]) > Trader.window_size:
+                self.trade_history[symbol].pop(0)
+
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
         """
         Only method required. It takes all buy and sell orders for all symbols as an input,
@@ -13,6 +35,9 @@ class Trader:
         """
         # Initialize the method output dict as an empty dict
         result = {}
+
+        # Update trade history for moving average calculations
+        self.update_trade_history(state.own_trades, state.market_trades)
 
         # Iterate over all the keys (the available products) contained in the order depths
         for product in state.order_depths.keys():
@@ -23,22 +48,20 @@ class Trader:
             # Initialize the list of Orders to be sent as an empty list
             orders: list[Order] = []
 
-            # Set the number of prices to consider for the weighted moving average
-            n = 10
-
             # Calculate the weighted moving average of recent prices
-            if len(order_depth.sell_orders) > 0 and len(order_depth.buy_orders) > 0:
-                recent_prices = list(order_depth.sell_orders.keys()) + list(order_depth.buy_orders.keys())
-                recent_prices.sort(reverse=True)
-                weights = list(range(1, n + 1))
-                fair_price = sum([price * weight for price, weight in zip(recent_prices[:n], weights)]) / sum(weights)
-            elif len(order_depth.sell_orders) > 0:
-                fair_price = min(order_depth.sell_orders.keys())
-            elif len(order_depth.buy_orders) > 0:
-                fair_price = max(order_depth.buy_orders.keys())
+            if len(self.trade_history[product]) == Trader.window_size:
+                weights = list(range(1, Trader.window_size + 1))
+                fair_price = sum([price * weight for price, weight in
+                                  zip(self.trade_history[product][:Trader.window_size], weights)]) / sum(weights)
             else:
-                # If there are no buy or sell orders, set the fair price to a default value
+                # If moving average history is less than window size, set the fair price to a default value
                 fair_price = Trader.initial_fair_price[product]
+
+            # Quantity Limit (may need to change if making more than one order in a round)
+            if product in state.position:
+                order_qty = Trader.position_limits[product] - abs(state.position[product])
+            else:
+                order_qty = Trader.position_limits[product]
 
             # If statement checks if there are any SELL orders in the market
             if len(order_depth.sell_orders) > 0:
@@ -50,10 +73,8 @@ class Trader:
 
                 # Check if the lowest ask (sell order) is lower than the fair value
                 if best_ask < fair_price:
-
-                    if state.position[product] >= Trader.position_limits[product]:
+                    if product in state.position and state.position[product] >= Trader.position_limits[product]:
                         continue
-                    order_qty = Trader.position_limits[product] - state.position[product]
 
                     # In case the lowest ask is lower than our fair value,
                     # This presents an opportunity for us to buy cheaply
@@ -62,18 +83,16 @@ class Trader:
 
             # If the price of the order is higher than the fair value
             # This is an opportunity to sell at a premium
-            if len(order_depth.buy_orders) != 0:
+            if len(order_depth.buy_orders) > 0:
                 best_bid = max(order_depth.buy_orders.keys())
                 best_bid_volume = order_depth.buy_orders[best_bid]
 
                 if best_bid > fair_price:
-
-                    if state.position[product] <= -Trader.position_limits[product]:
+                    if product in state.position and state.position[product] <= -Trader.position_limits[product]:
                         continue
-                    order_qty = state.position[product] - Trader.position_limits[product]
 
-                    print("SELL", str(order_qty) + "x", best_bid)
-                    orders.append(Order(product, best_bid, order_qty))
+                    print("SELL", str(-order_qty) + "x", best_bid)
+                    orders.append(Order(product, best_bid, -order_qty))
 
             # Add all the above the orders to the result dict
             result[product] = orders
