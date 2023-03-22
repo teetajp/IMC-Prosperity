@@ -4,7 +4,7 @@ from datamodel import OrderDepth, TradingState, Order, Symbol, Trade
 
 class Trader:
     symbols = ["PEARLS", "BANANAS", "COCONUTS", "PINA_COLADAS"]
-    initial_fair_price = {"PEARLS": 10000, "BANANAS": 4875, "COCONUTS": 0, "PINA_COLADAS": 0}
+    initial_fair_price = {"PEARLS": 10000, "BANANAS": 4813, "COCONUTS": 0, "PINA_COLADAS": 0}
     position_limits = {"PEARLS": 20, "BANANAS": 20, "COCONUTS": 600, "PINA_COLADAS": 300}
     window_size = 30  # Set the number of prices to consider for the weighted moving average
 
